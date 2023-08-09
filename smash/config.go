@@ -7,6 +7,25 @@ import (
 	"github.com/curtisnewbie/gocommon/common"
 )
 
+const (
+	INSTRUCTION_EXAMPLE = `
+instructions:
+  - url: "http://localhost:8080/ping" # instruction with cron that runs periodically
+    method: PUT
+    parallism: 100
+    cron: "*/1 * * * * ?"
+    headers:
+      - "Content-Type": "application/json"
+    payload: '{ "purpose": "get wrecked my boi!!!" }'
+
+  - url: "http://localhost:8080/pong" # instruction without cron that only run once
+    method: GET
+    parallism: 100
+    headers:
+      - "Content-Type": "application/json"
+`
+)
+
 type Instruction struct {
 	Cron      string
 	Parallism int
@@ -46,7 +65,7 @@ func (si SmashInstructions) CronInstructions() []Instruction {
 func InstructionFilePath(rail common.Rail) (string, error) {
 	file := common.GetPropStr(PROP_INSTRUCTION_PATH)
 	if common.IsBlankStr(file) {
-		return "", fmt.Errorf("please specifiy file path using '%v=...'", PROP_INSTRUCTION_PATH)
+		return "", fmt.Errorf("please specifiy file path using '%v=/path/to/your/file' and include your smashing instructions in it, e.g., \n%v", PROP_INSTRUCTION_PATH, INSTRUCTION_EXAMPLE)
 	}
 	return file, nil
 }
