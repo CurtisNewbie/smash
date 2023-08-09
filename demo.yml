@@ -1,0 +1,8 @@
+instructions:
+  - url: "http://localhost:8080/ping"
+    method: PUT
+    parallism: 999
+    cron: "*/1 * * * * ?"
+    headers:
+      - "Content-Type": "application/json"
+    payload: '{ "purpose": "get wrecked my boi!!!" }'
