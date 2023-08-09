@@ -5,7 +5,8 @@ Lets smash some endpoints
 Specify where the instruction file is:
 
 ```sh
-go run main.go instruction-file=demo.yml
+go build -o smasher
+./smasher instruction-file=demo.yml
 ```
 
 Specify the rules in the instruction file:
@@ -25,5 +26,4 @@ instructions:
     parallism: 100
     headers:
       - "Content-Type": "application/json"
-    payload: '{ "purpose": "get wrecked my boi!!!" }'
 ```
