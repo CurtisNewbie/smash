@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/curtisnewbie/gocommon/client"
 	"github.com/curtisnewbie/gocommon/common"
@@ -31,7 +33,7 @@ func PrepareInstructions(rail common.Rail) (SmashInstructions, error) {
 }
 
 func singleSmash(rail common.Rail, ins Instruction) {
-	rail.Infof("Preparing request to %v %v", ins.Method, ins.Url)
+	rail.Debugf("Preparing request to %v %v", ins.Method, ins.Url)
 	cli := client.NewDefaultTClient(rail, ins.Url).
 		AddHeaders(ins.Headers)
 
@@ -55,38 +57,49 @@ func singleSmash(rail common.Rail, ins Instruction) {
 		rail.Errorf("Endpoint %v %v returns error, %v", ins.Method, ins.Url, r.Err)
 		return
 	}
-	defer r.Close()
 
 	s, err := r.ReadStr()
 	if err != nil {
 		rail.Errorf("Endpoint %v %v returns error, %v", ins.Method, ins.Url, r.Err)
 		return
 	}
-	rail.Infof("Endpoint %v %v returns: %v", ins.Method, ins.Url, s)
+	rail.Debugf("Endpoint %v %v returns: %v", ins.Method, ins.Url, s)
 }
 
 func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
-	var wg sync.WaitGroup
+	var instWg sync.WaitGroup // waitGroup for instructions
 
 	for j := range instructions {
 		inst := instructions[j]
 
-		parall := inst.Parallism
-		if parall < 1 {
-			parall = 1
+		if inst.Parallism < 1 {
+			inst.Parallism = 1
 		}
+		instWg.Add(1)
 
-		for i := 0; i < parall; i++ {
-			wg.Add(1)
+		go func(rail common.Rail, inst Instruction) {
+			defer instWg.Done()
 
-			go func() {
-				defer wg.Done()
-				singleSmash(rail, inst)
-			}()
-		}
+			var totalTime int64
+			var paraWg sync.WaitGroup // waitGroup for parallel requests
+
+			for i := 0; i < inst.Parallism; i++ {
+				paraWg.Add(1)
+				go func() {
+					defer paraWg.Done()
+					istart := time.Now()
+					singleSmash(rail, inst)
+					atomic.AddInt64(&totalTime, int64(time.Since(istart)))
+				}()
+			}
+			paraWg.Wait()
+
+			rail.Infof("\n\n\n>>> Instruction finished, '%v %v', took %v, on average: %v each, total parallel requests: %v <<< \n\n",
+				inst.Method, inst.Url, time.Duration(totalTime), time.Duration(totalTime/int64(inst.Parallism)), inst.Parallism)
+		}(rail.NextSpan(), inst)
 	}
 
-	wg.Wait()
+	instWg.Wait()
 
 	if exitWhenDone {
 		if !common.HasScheduler() { // we only have runOnce tasks
@@ -116,6 +129,7 @@ func StartSmashing() error {
 	common.SetProp(common.PROP_SERVER_ENABLED, false)
 	common.SetProp(common.PROP_APP_NAME, "smash")
 	common.SetProp(common.PROP_PRODUCTION_MODE, true)
+	common.SetProp(common.PROP_LOGGING_LEVEL, "info")
 
 	server.PreServerBootstrap(func(rail common.Rail) error {
 		instr, err := PrepareInstructions(rail)

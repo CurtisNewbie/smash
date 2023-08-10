@@ -9,6 +9,12 @@ go build -o smasher
 ./smasher instruction-file=demo.yml
 ```
 
+By default, the response body is logged in DEBUG level, enable it as follows:
+
+```
+./smasher instruction-file=demo.yml logging.level=INFO
+```
+
 Specify the rules in the instruction file:
 
 ```yaml
