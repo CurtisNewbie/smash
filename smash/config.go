@@ -12,7 +12,7 @@ const (
 instructions:
   - url: "http://localhost:8080/ping" # instruction with cron that runs periodically
     method: PUT
-    parallism: 100
+    parallelism: 100
     cron: "*/1 * * * * ?"
     headers:
       - "Content-Type": "application/json"
@@ -20,19 +20,19 @@ instructions:
 
   - url: "http://localhost:8080/pong" # instruction without cron that only run once
     method: GET
-    parallism: 100
+    parallelism: 100
     headers:
       - "Content-Type": "application/json"
 `
 )
 
 type Instruction struct {
-	Cron      string
-	Parallism int
-	Url       string
-	Method    string
-	Headers   map[string]string
-	Payload   string
+	Cron        string
+	Parallelism int
+	Url         string
+	Method      string
+	Headers     map[string]string
+	Payload     string
 }
 
 type SmashInstructions struct {

@@ -72,8 +72,8 @@ func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
 	for j := range instructions {
 		inst := instructions[j]
 
-		if inst.Parallism < 1 {
-			inst.Parallism = 1
+		if inst.Parallelism < 1 {
+			inst.Parallelism = 1
 		}
 		instWg.Add(1)
 
@@ -83,7 +83,7 @@ func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
 			var totalTime int64
 			var paraWg sync.WaitGroup // waitGroup for parallel requests
 
-			for i := 0; i < inst.Parallism; i++ {
+			for i := 0; i < inst.Parallelism; i++ {
 				paraWg.Add(1)
 				go func() {
 					defer paraWg.Done()
@@ -95,7 +95,7 @@ func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
 			paraWg.Wait()
 
 			rail.Infof("\n\n\n>>> Instruction finished, '%v %v', took %v, on average: %v each, total parallel requests: %v <<< \n\n",
-				inst.Method, inst.Url, time.Duration(totalTime), time.Duration(totalTime/int64(inst.Parallism)), inst.Parallism)
+				inst.Method, inst.Url, time.Duration(totalTime), time.Duration(totalTime/int64(inst.Parallelism)), inst.Parallelism)
 		}(rail.NextSpan(), inst)
 	}
 

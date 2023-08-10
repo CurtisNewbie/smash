@@ -21,7 +21,7 @@ Specify the rules in the instruction file:
 instructions:
   - url: "http://localhost:8080/ping" # instruction with cron that runs periodically
     method: PUT
-    parallism: 100
+    parallelism: 100
     cron: "*/1 * * * * ?"
     headers:
       - "Content-Type": "application/json"
@@ -29,7 +29,7 @@ instructions:
 
   - url: "http://localhost:8080/pong" # instruction without cron that only run once
     method: GET
-    parallism: 100
+    parallelism: 100
     headers:
       - "Content-Type": "application/json"
 ```
