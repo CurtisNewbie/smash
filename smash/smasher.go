@@ -63,7 +63,7 @@ func singleSmash(rail common.Rail, ins Instruction) {
 		rail.Errorf("Endpoint %v %v returns error, %v", ins.Method, ins.Url, r.Err)
 		return
 	}
-	rail.Debugf("Endpoint %v %v returns: %v", ins.Method, ins.Url, s)
+	rail.Debugf("Endpoint %v %v returns %v, %v", ins.Method, ins.Url, r.StatusCode, s)
 }
 
 func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
@@ -136,7 +136,6 @@ func StartSmashing() error {
 		if err != nil {
 			return fmt.Errorf("failed to prepare instructions, %v", err)
 		}
-		rail.Debugf("Instructions: %v", instructions)
 		instructions = instr
 
 		return scheduleSmashing(rail, instructions)
