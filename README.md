@@ -31,6 +31,7 @@ instructions:
     method: GET
     parallelism: 100
     headers:
+      - "Content-Type": "application/json"
 
   - parallelism: 100                  # instruction that can be extracted from curl command
     curl: |
