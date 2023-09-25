@@ -16,7 +16,19 @@ import (
 
 var (
 	instructions SmashInstructions
+	customClient *http.Client
 )
+
+func init() {
+	// maximize the number of connections possible
+	customClient = &http.Client{Timeout: 10 * time.Second}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConns = 500
+	t.MaxConnsPerHost = 1000
+	t.MaxIdleConnsPerHost = 500
+	t.IdleConnTimeout = time.Second * 60
+	customClient.Transport = t
+}
 
 func PrepareInstructions(rail common.Rail) (SmashInstructions, error) {
 	file, err := InstructionFilePath(rail)
@@ -34,7 +46,7 @@ func PrepareInstructions(rail common.Rail) (SmashInstructions, error) {
 
 func singleSmash(rail common.Rail, ins Instruction) {
 	rail.Debugf("Preparing request to %v %v", ins.Method, ins.Url)
-	cli := client.NewDefaultTClient(rail, ins.Url).
+	cli := client.NewTClient(rail, ins.Url, customClient).
 		AddHeaders(ins.Headers)
 
 	var r *client.TResponse
