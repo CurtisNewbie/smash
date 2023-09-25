@@ -23,9 +23,8 @@ func init() {
 	// maximize the number of connections possible
 	customClient = &http.Client{Timeout: 10 * time.Second}
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.MaxIdleConns = 500
-	t.MaxConnsPerHost = 1000
-	t.MaxIdleConnsPerHost = 500
+	t.MaxIdleConns = 2000
+	t.MaxIdleConnsPerHost = 2000
 	t.IdleConnTimeout = time.Second * 60
 	customClient.Transport = t
 }
