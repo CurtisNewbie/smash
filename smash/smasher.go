@@ -130,10 +130,8 @@ func doSmash(rail miso.Rail, exitWhenDone bool, instructions ...Instruction) {
 
 	instWg.Wait()
 
-	if exitWhenDone {
-		if !miso.HasScheduledJobs() { // we only have runOnce tasks
-			os.Exit(0) // force the server to exit, not the best way of doing it, but this app has nothing serious either
-		}
+	if exitWhenDone && !miso.HasScheduledJobs() { // we only have runOnce tasks
+		os.Exit(0) // force the server to exit, not the best way of doing it, but this app has nothing serious either
 	}
 }
 
@@ -183,8 +181,18 @@ func StartSmashing() error {
 		return scheduleSmashing(rail, instructions)
 	})
 
+	miso.AddShutdownHook(func() {
+		// stop immediately on SIGTERM
+		os.Exit(0)
+	})
+
 	miso.PostServerBootstrapped(func(rail miso.Rail) error {
-		return smashImmediately(rail, instructions)
+		go func() {
+			if err := smashImmediately(rail, instructions); err != nil {
+				rail.Errorf("SmashImmediately failed, %v", err)
+			}
+		}()
+		return nil
 	})
 
 	miso.BootstrapServer(os.Args)
