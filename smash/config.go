@@ -1,12 +1,21 @@
 package smash
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/curtisnewbie/gocommon/common"
-	"github.com/sirupsen/logrus"
+	"github.com/curtisnewbie/miso/miso"
+	"github.com/curtisnewbie/miso/util"
+)
+
+var (
+	cliInstUrl     = flag.String("url", "", "URL")
+	cliInstMethod  = flag.String("method", "GET", "HTTP Method")
+	cliInstConc    = flag.Int("conc", 1, "Concurrency")
+	cliInstHeaders = util.FlagStrSlice("header", "Concurrency")
+	cliInstPayload = flag.String("data", "", "Data")
 )
 
 type Instruction struct {
@@ -23,7 +32,15 @@ type SmashInstructions struct {
 	Instructions []Instruction `mapstructure:"instructions"`
 }
 
-func (si SmashInstructions) filter(predicate common.Predicate[Instruction]) []Instruction {
+func (si *SmashInstructions) Add(inst Instruction) {
+	si.Instructions = append(si.Instructions, inst)
+}
+
+func (si *SmashInstructions) AddAll(inst []Instruction) {
+	si.Instructions = append(si.Instructions, inst...)
+}
+
+func (si SmashInstructions) filter(predicate util.Predicate[Instruction]) []Instruction {
 	filtered := []Instruction{}
 	for i := range si.Instructions {
 		inst := si.Instructions[i]
@@ -36,25 +53,25 @@ func (si SmashInstructions) filter(predicate common.Predicate[Instruction]) []In
 
 func (si SmashInstructions) RunOnceInstructions() []Instruction {
 	return si.filter(func(t Instruction) bool {
-		return common.IsBlankStr(t.Cron)
+		return util.IsBlankStr(t.Cron)
 	})
 }
 
 func (si SmashInstructions) CronInstructions() []Instruction {
 	return si.filter(func(t Instruction) bool {
-		return !common.IsBlankStr(t.Cron)
+		return !util.IsBlankStr(t.Cron)
 	})
 }
 
-func InstructionFilePath(rail common.Rail) (string, error) {
-	file := common.GetPropStr(PROP_INSTRUCTION_PATH)
-	if common.IsBlankStr(file) {
+func InstructionFilePath(rail miso.Rail) (string, error) {
+	file := miso.GetPropStr(PROP_INSTRUCTION_PATH)
+	if util.IsBlankStr(file) {
 		return "", fmt.Errorf("please specifiy file path using '%v=/path/to/your/file' and include your smashing instructions in it", PROP_INSTRUCTION_PATH)
 	}
 	return file, nil
 }
 
-func LoadInstructionFile(rail common.Rail, path string) error {
+func LoadInstructionFile(rail miso.Rail, path string) error {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("file '%v' not found", path)
@@ -62,13 +79,13 @@ func LoadInstructionFile(rail common.Rail, path string) error {
 		return fmt.Errorf("failed to open file '%v', %v", path, err)
 	}
 
-	common.LoadConfigFromFile(path, rail)
+	miso.LoadConfigFromFile(path, rail)
 	return nil
 }
 
-func PackSmashInstructions() SmashInstructions {
+func ConfSmashInstructions() []Instruction {
 	var instructions SmashInstructions
-	common.UnmarshalFromProp(&instructions)
+	miso.UnmarshalFromProp(&instructions)
 
 	// do some pre-processing
 	copied := []Instruction{}
@@ -79,23 +96,41 @@ func PackSmashInstructions() SmashInstructions {
 	}
 	instructions.Instructions = copied
 
-	return instructions
+	return instructions.Instructions
+}
+
+func CliSmashInstruction() (Instruction, bool) {
+	if util.IsBlankStr(*cliInstUrl) {
+		return Instruction{}, false
+	}
+	headers := map[string]string{}
+	for _, h := range *cliInstHeaders {
+		if k, v, ok := headerKv(h); ok {
+			headers[k] = v
+		}
+	}
+	return Instruction{
+		Url:         *cliInstUrl,
+		Method:      *cliInstMethod,
+		Parallelism: *cliInstConc,
+		Payload:     *cliInstPayload,
+		Headers:     headers,
+	}, true
 }
 
 // TODO: improve this parser, it's now only useful for well-structured curl 'copied' from Chrome
 func TryParseCurl(inst Instruction) Instruction {
-	if common.IsBlankStr(inst.Curl) {
+	if util.IsBlankStr(inst.Curl) {
 		return inst
 	}
 	inst.Headers = map[string]string{}
-	if common.IsBlankStr(inst.Method) {
+	if util.IsBlankStr(inst.Method) {
 		inst.Method = "GET"
 	}
 
 	segments := curlSegments(inst.Curl)
 	for i := range segments {
 		seg := strings.TrimSpace(segments[i])
-		// logrus.Debugf("segment %v %v", i, seg)
 
 		if k, v, ok := parseCurlParam(seg, "-H"); ok { // header
 			inst.Headers[k] = v
@@ -108,7 +143,7 @@ func TryParseCurl(inst Instruction) Instruction {
 		}
 	}
 	inst.Curl = ""
-	logrus.Debugf("%+v", inst)
+	miso.Debugf("%+v", inst)
 	return inst
 }
 
@@ -121,20 +156,27 @@ func unquote(s string) string {
 	return strings.TrimSpace(string(v))
 }
 
+func headerKv(s string) (string, string, bool) {
+	tokens := strings.SplitN(s, ":", 2)
+	if len(tokens) > 1 { // k : value
+		k := strings.TrimSpace(tokens[0])
+		v := strings.TrimSpace(tokens[1])
+		return k, v, true
+	}
+	return "", "", false
+}
+
 func parseCurlParam(seg string, prefix string) (string, string, bool) {
 	if strings.HasPrefix(seg, prefix) {
 		seg = unquote(string([]rune(seg)[len([]rune(prefix)):]))
-		// logrus.Debugf("v: %v, prefix: %v, j: %v", seg, prefix, j)
 		tokens := strings.SplitN(seg, ":", 2)
 		if len(tokens) > 1 { // k : value
 			k := strings.TrimSpace(tokens[0])
 			v := strings.TrimSpace(tokens[1])
-			// logrus.Debugf("v: %v, prefix: %v, key: %v, val: %v", seg, prefix, k, v)
 			return k, v, true
 		}
 		if len(tokens) > 0 { // only value
 			val := strings.TrimSpace(tokens[0])
-			// logrus.Debugf("v: %v, prefix: %v, key: , val: %v", seg, prefix, val)
 			return "", val, true
 		}
 	}
@@ -144,7 +186,7 @@ func parseCurlParam(seg string, prefix string) (string, string, bool) {
 func parseCurlDest(v string) (string, bool) {
 	if j := strings.Index(v, "http"); j > -1 { // it may look like 'curl "http:...." or "http:..."'
 		s := []rune(v)[j:]
-		logrus.Debugf("(http) s: %v, j: %v", v, j)
+		miso.Debugf("(http) s: %v, j: %v", v, j)
 		k := len(s) - 1
 		if s[k] == '\'' || s[k] == '"' {
 			quote := s[k]

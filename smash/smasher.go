@@ -2,26 +2,30 @@ package smash
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/curtisnewbie/gocommon/client"
-	"github.com/curtisnewbie/gocommon/common"
-	"github.com/curtisnewbie/gocommon/server"
+	"github.com/curtisnewbie/miso/miso"
 )
 
 var (
-	instructions SmashInstructions
+	instructions SmashInstructions = SmashInstructions{}
 	customClient *http.Client
 )
 
 func init() {
-	// maximize the number of connections possible
-	customClient = &http.Client{Timeout: 10 * time.Second}
+	// maximize the number of connections possible, disable redirect
+	customClient = &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}}
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.MaxIdleConns = 2000
 	t.MaxIdleConnsPerHost = 2000
@@ -29,26 +33,30 @@ func init() {
 	customClient.Transport = t
 }
 
-func PrepareInstructions(rail common.Rail) (SmashInstructions, error) {
-	file, err := InstructionFilePath(rail)
-	if err != nil {
-		return SmashInstructions{}, err
+func PrepareInstructions(rail miso.Rail) (SmashInstructions, error) {
+	if v, ok := CliSmashInstruction(); ok {
+		instructions.Add(v)
+	} else {
+		file, err := InstructionFilePath(rail)
+		if err != nil {
+			return SmashInstructions{}, err
+		}
+		err = LoadInstructionFile(rail, file)
+		if err != nil {
+			return SmashInstructions{}, err
+		}
+		instructions.AddAll(ConfSmashInstructions())
 	}
-	err = LoadInstructionFile(rail, file)
-	if err != nil {
-		return SmashInstructions{}, err
-	}
-
-	instructions := PackSmashInstructions()
 	return instructions, nil
 }
 
-func singleSmash(rail common.Rail, ins Instruction) {
+func singleSmash(rail miso.Rail, ins Instruction) {
 	rail.Debugf("Preparing request to %v %v", ins.Method, ins.Url)
-	cli := client.NewTClient(rail, ins.Url, customClient).
+	cli := miso.NewTClient(rail, ins.Url).
+		UseClient(customClient).
 		AddHeaders(ins.Headers)
 
-	var r *client.TResponse
+	var r *miso.TResponse
 	switch ins.Method {
 	case http.MethodGet:
 		r = cli.Get()
@@ -69,15 +77,25 @@ func singleSmash(rail common.Rail, ins Instruction) {
 		return
 	}
 
-	s, err := r.ReadStr()
-	if err != nil {
-		rail.Errorf("Endpoint %v %v returns error, %v", ins.Method, ins.Url, r.Err)
-		return
+	rct := r.Resp.Header.Get("Content-Type")
+	var rs string = "...binary..."
+	if !strings.Contains(strings.ToLower(rct), "octet-stream") {
+		s, err := r.Str()
+		if err != nil {
+			rail.Errorf("Endpoint %v %v returns error, %v", ins.Method, ins.Url, r.Err)
+			return
+		} else {
+			rs = s
+		}
 	}
-	rail.Debugf("Endpoint %v %v returns %v, %v", ins.Method, ins.Url, r.StatusCode, s)
+	if miso.IsDebugLevel() {
+		rail.Debugf("Endpoint %v %v returns %v, %v, %+v", ins.Method, ins.Url, r.StatusCode, rs, r.Resp.Header)
+	} else {
+		rail.Infof("Endpoint %v %v returns %v", ins.Method, ins.Url, r.StatusCode)
+	}
 }
 
-func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
+func doSmash(rail miso.Rail, exitWhenDone bool, instructions ...Instruction) {
 	var instWg sync.WaitGroup // waitGroup for instructions
 
 	for j := range instructions {
@@ -88,7 +106,7 @@ func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
 		}
 		instWg.Add(1)
 
-		go func(rail common.Rail, inst Instruction) {
+		go func(rail miso.Rail, inst Instruction) {
 			defer instWg.Done()
 
 			var totalTime int64
@@ -113,49 +131,62 @@ func doSmash(rail common.Rail, exitWhenDone bool, instructions ...Instruction) {
 	instWg.Wait()
 
 	if exitWhenDone {
-		if !common.HasScheduler() { // we only have runOnce tasks
+		if !miso.HasScheduledJobs() { // we only have runOnce tasks
 			os.Exit(0) // force the server to exit, not the best way of doing it, but this app has nothing serious either
 		}
 	}
 }
 
 // schedule instructions that are executed periodically until interrupted
-func scheduleSmashing(rail common.Rail, si SmashInstructions) error {
+func scheduleSmashing(rail miso.Rail, si SmashInstructions) error {
 	cronInst := si.CronInstructions()
 	for i := range cronInst {
 		inst := cronInst[i]
-		common.ScheduleCron(inst.Cron, true, func() {
-			doSmash(rail, false, inst)
+		miso.ScheduleCron(miso.Job{
+			Name:            fmt.Sprintf("inst-%v", i),
+			Cron:            inst.Cron,
+			CronWithSeconds: true,
+			Run: func(rail miso.Rail) error {
+				doSmash(rail, false, inst)
+				return nil
+			},
 		})
 	}
 	return nil
 }
 
-func smashImmediately(rail common.Rail, si SmashInstructions) error {
+func smashImmediately(rail miso.Rail, si SmashInstructions) error {
 	doSmash(rail, true, si.RunOnceInstructions()...)
 	return nil
 }
 
-func StartSmashing() error {
-	common.SetProp(common.PROP_SERVER_ENABLED, false)
-	common.SetProp(common.PROP_APP_NAME, "smash")
-	common.SetProp(common.PROP_PRODUCTION_MODE, true)
-	common.SetProp(common.PROP_LOGGING_LEVEL, "info")
+var (
+	cliDebug = flag.Bool("debug", false, "Debug")
+)
 
-	server.PreServerBootstrap(func(rail common.Rail) error {
+func StartSmashing() error {
+	miso.SetProp(miso.PropServerEnabled, false)
+	miso.SetProp(miso.PropAppName, "smash")
+	miso.SetProp(miso.PropProdMode, true)
+
+	flag.Parse()
+	if *cliDebug {
+		miso.SetLogLevel("debug")
+	}
+
+	miso.PreServerBootstrap(func(rail miso.Rail) error {
 		instr, err := PrepareInstructions(rail)
 		if err != nil {
 			return fmt.Errorf("failed to prepare instructions, %v", err)
 		}
 		instructions = instr
-
 		return scheduleSmashing(rail, instructions)
 	})
 
-	server.PostServerBootstrapped(func(rail common.Rail) error {
+	miso.PostServerBootstrapped(func(rail miso.Rail) error {
 		return smashImmediately(rail, instructions)
 	})
 
-	server.BootstrapServer(os.Args)
+	miso.BootstrapServer(os.Args)
 	return nil
 }
