@@ -13,6 +13,7 @@ import (
 var (
 	cliInstUrl     = flag.String("url", "", "URL")
 	cliInstMethod  = flag.String("method", "GET", "HTTP Method")
+	cliInstCron    = flag.String("cron", "", "Cron Expression, e.g, */1 * * * * ?")
 	cliInstConc    = flag.Int("conc", 1, "Concurrency")
 	cliInstHeaders = util.FlagStrSlice("header", "Concurrency")
 	cliInstPayload = flag.String("data", "", "Data")
@@ -113,6 +114,7 @@ func CliSmashInstruction() (Instruction, bool) {
 		Url:         *cliInstUrl,
 		Method:      *cliInstMethod,
 		Parallelism: *cliInstConc,
+		Cron:        *cliInstCron,
 		Payload:     *cliInstPayload,
 		Headers:     headers,
 	}, true
