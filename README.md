@@ -6,13 +6,13 @@ Specify where the instruction file is:
 
 ```sh
 go build -o smasher
-./smasher instruction-file=demo.yml
+./smasher -file demo.yml
 ```
 
 By default, the response body is logged in DEBUG level, adjust logging level as below:
 
 ```
-./smasher instruction-file=demo.yml logging.level=DEBUG
+./smasher -file demo.yml -debug
 ```
 
 Specify the rules in the instruction file:
@@ -33,7 +33,7 @@ instructions:
     headers:
       - "Content-Type": "application/json"
 
-  - parallelism: 100                  # instruction that can be extracted from curl command
+  - parallelism: 100 # instruction that can be extracted from curl command
     curl: |
       curl 'http://localhost:8080/bang' \
       -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7' \

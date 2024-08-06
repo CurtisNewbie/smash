@@ -11,6 +11,7 @@ import (
 )
 
 var (
+	cliInstFile    = flag.String("file", "", "Instruction File")
 	cliInstUrl     = flag.String("url", "", "URL")
 	cliInstMethod  = flag.String("method", "GET", "HTTP Method")
 	cliInstCron    = flag.String("cron", "", "Cron Expression, e.g, */1 * * * * ?")
@@ -65,9 +66,9 @@ func (si SmashInstructions) CronInstructions() []Instruction {
 }
 
 func InstructionFilePath(rail miso.Rail) (string, error) {
-	file := miso.GetPropStr(PROP_INSTRUCTION_PATH)
+	file := *cliInstFile
 	if util.IsBlankStr(file) {
-		return "", fmt.Errorf("please specifiy file path using '%v=/path/to/your/file' and include your smashing instructions in it", PROP_INSTRUCTION_PATH)
+		return "", fmt.Errorf("please specifiy instruction file path")
 	}
 	return file, nil
 }
